@@ -1,137 +1,113 @@
-# alx-backend-python
-#!/usr/bin/python3
-import mysql.connector
-import csv
-import uuid
+#!/usr/bin/env python3
+"""
+Repo: alx-backend-python
+Directory: python-context-async-perations-0x02
+File: 0-databaseconnection.py
 
-def connect_db():
-    try:
-        connection = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="yourpassword"
-        )
-        return connection
-    except mysql.connector.Error as err:
-        print(f"Error: {err}")
-        return None
+Class-based context manager for handling database connections.
+"""
 
-def create_database(connection):
-    cursor = connection.cursor()
-    cursor.execute("CREATE DATABASE IF NOT EXISTS ALX_prodev")
-    cursor.close()
+import sqlite3
 
-def connect_to_prodev():
-    try:
-        connection = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="yourpassword",
-            database="ALX_prodev"
-        )
-        return connection
-    except mysql.connector.Error as err:
-        print(f"Error: {err}")
-        return None
 
-def create_table(connection):
-    cursor = connection.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS user_data (
-            user_id CHAR(36) PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
-            email VARCHAR(255) NOT NULL,
-            age DECIMAL NOT NULL,
-            UNIQUE INDEX(user_id)
-        )
-    """)
-    connection.commit()
-    cursor.close()
-    print("Table user_data created successfully")
+class DatabaseConnection:
+    """Custom context manager to handle opening and closing DB connections."""
 
-def insert_data(connection, csv_file):
-    cursor = connection.cursor()
-    with open(csv_file, newline='') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            cursor.execute("""
-                INSERT IGNORE INTO user_data(user_id, name, email, age)
-                VALUES (%s, %s, %s, %s)
-            """, (str(uuid.uuid4()), row['name'], row['email'], int(row['age'])))
-    connection.commit()
-    cursor.close()
-    #!/usr/bin/python3
-import seed
+    def __init__(self, db_name="users.db"):
+        self.db_name = db_name
+        self.conn = None
 
-def stream_users():
-    connection = seed.connect_to_prodev()
-    cursor = connection.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM user_data")
-    for row in cursor:
-        yield row
-    cursor.close()
-    connection.close()
-    #!/usr/bin/python3
-import seed
+    def __enter__(self):
+        self.conn = sqlite3.connect(self.db_name)
+        return self.conn
 
-def stream_users_in_batches(batch_size):
-    connection = seed.connect_to_prodev()
-    cursor = connection.cursor(dictionary=True)
-    offset = 0
-    while True:
-        cursor.execute(f"SELECT * FROM user_data LIMIT {batch_size} OFFSET {offset}")
-        rows = cursor.fetchall()
-        if not rows:
-            break
-        yield rows
-        offset += batch_size
-    cursor.close()
-    connection.close()
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.conn:
+            self.conn.close()
 
-def batch_processing(batch_size):
-    for batch in stream_users_in_batches(batch_size):
-        for user in batch:
-            if user['age'] > 25:
-                print(user)
-                #!/usr/bin/python3
-import seed
-
-def paginate_users(page_size, offset):
-    connection = seed.connect_to_prodev()
-    cursor = connection.cursor(dictionary=True)
-    cursor.execute(f"SELECT * FROM user_data LIMIT {page_size} OFFSET {offset}")
-    rows = cursor.fetchall()
-    connection.close()
-    return rows
-
-def lazy_pagination(page_size):
-    offset = 0
-    while True:
-        page = paginate_users(page_size, offset)
-        if not page:
-            break
-        yield page
-        offset += page_size
-        #!/usr/bin/python3
-import seed
-
-def stream_user_ages():
-    connection = seed.connect_to_prodev()
-    cursor = connection.cursor(dictionary=True)
-    cursor.execute("SELECT age FROM user_data")
-    for row in cursor:
-        yield row['age']
-    cursor.close()
-    connection.close()
-
-def average_age():
-    total = 0
-    count = 0
-    for age in stream_user_ages():
-        total += age
-        count += 1
-    print(f"Average age of users: {total / count:.2f}")
 
 if __name__ == "__main__":
-    average_age()
-        
+    with DatabaseConnection("users.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users")
+        results = cursor.fetchall()
+        print(results)
+#!/usr/bin/env python3
+"""
+Repo: alx-backend-python
+Directory: python-context-async-perations-0x02
+File: 1-execute.py
+
+Reusable context manager to execute a query with parameters.
+"""
+
+import sqlite3
+
+
+class ExecuteQuery:
+    """Executes a query within a context manager."""
+
+    def __init__(self, query, params=(), db_name="users.db"):
+        self.query = query
+        self.params = params
+        self.db_name = db_name
+        self.conn = None
+        self.results = None
+
+    def __enter__(self):
+        self.conn = sqlite3.connect(self.db_name)
+        cursor = self.conn.cursor()
+        cursor.execute(self.query, self.params)
+        self.results = cursor.fetchall()
+        return self.results
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.conn:
+            self.conn.close()
+
+
+if __name__ == "__main__":
+    query = "SELECT * FROM users WHERE age > ?"
+    with ExecuteQuery(query, (25,)) as results:
+        print(results)
+#!/usr/bin/env python3
+"""
+Repo: alx-backend-python
+Directory: python-context-async-perations-0x02
+File: 3-concurrent.py
+
+Concurrent asynchronous database queries using aiosqlite.
+"""
+
+import asyncio
+import aiosqlite
+
+
+async def async_fetch_users():
+    """Fetch all users from DB asynchronously."""
+    async with aiosqlite.connect("users.db") as db:
+        cursor = await db.execute("SELECT * FROM users")
+        rows = await cursor.fetchall()
+        return rows
+
+
+async def async_fetch_older_users():
+    """Fetch users older than 40 asynchronously."""
+    async with aiosqlite.connect("users.db") as db:
+        cursor = await db.execute("SELECT * FROM users WHERE age > 40")
+        rows = await cursor.fetchall()
+        return rows
+
+
+async def fetch_concurrently():
+    """Run both queries concurrently."""
+    results = await asyncio.gather(
+        async_fetch_users(),
+        async_fetch_older_users(),
+    )
+    print("All Users:", results[0])
+    print("Users older than 40:", results[1])
+
+
+if __name__ == "__main__":
+    asyncio.run(fetch_concurrently())
